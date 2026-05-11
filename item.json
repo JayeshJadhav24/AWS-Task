@@ -1,0 +1,8 @@
+﻿{
+  "user_id": {"S": "usr_001"},
+  "name": {"S": "Rahul Sharma"},
+  "email": {"S": "rahul@example.com"},
+  "user_type": {"S": "regular"},
+  "age": {"N": "28"},
+  "city": {"S": "Mumbai"}
+}

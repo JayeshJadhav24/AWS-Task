@@ -1,0 +1,910 @@
+TODO App
+FastAPI + AWS Services + LocalStack
+Complete Step-by-Step Hands-On Lab Guide
+Covers: FastAPI  •  EC2  •  S3  •  SES  •  LocalStack  •  PostgreSQL
+Beginner-Friendly  |  Local AWS Simulation  |  2-3 Hour Lab
+Project Overview
+This hands-on lab guides you through building a fully functional TODO web application using FastAPI (Python) as the backend, with AWS services simulated locally using LocalStack. By the end you will have a running TODO app that creates and stores tasks, uploads attachments to S3, and sends email notifications via SES — all running on your local machine before deploying to real AWS.
+What You Will Build
+A FastAPI backend with full CRUD for TODO items
+PostgreSQL database to store todos persistently
+AWS S3 (via LocalStack) to store file attachments for todos
+AWS SES (via LocalStack) to send email notifications when a todo is created
+A simple HTML frontend to interact with the API
+Everything running locally using LocalStack — no real AWS charges
+What is LocalStack?
+LocalStack is a tool that runs a fully functional AWS cloud environment on your local machine inside Docker. Instead of connecting to real AWS (which costs money and requires internet), your app connects to LocalStack which behaves exactly like AWS. This means you can develop and test S3 uploads, SES emails, and other AWS services completely for free on your laptop.
+LocalStack simulates these AWS services locally:
+S3      — File/object storage (todo attachments)
+SES     — Simple Email Service (notifications)
+EC2     — Not needed locally; you will deploy to real EC2 at the end
+And 60+ other AWS services all running in one Docker container
+Architecture Diagram
+  Browser / curl
+       |
+       v
+  FastAPI App (Python)  ??  PostgreSQL Database
+       |                         (stores todos)
+       |
+       +--?  LocalStack S3   (stores file attachments)
+       |
+       +--?  LocalStack SES  (sends email notifications)
+  LocalStack runs all AWS services in one Docker container
+  Everything on your local machine — no internet needed
+Chapter 1: Prerequisites & Tool Installation
+Before writing any code you need to install the required tools. Follow every step in order. Do not skip any step.
+1.1 Tools You Need
+Tool
+Purpose
+Where to Get It
+Python 3.11+
+Runtime for FastAPI
+python.org/downloads
+pip
+Python package manager
+Comes with Python
+Docker Desktop
+Runs LocalStack container
+docker.com/products/docker-desktop
+LocalStack CLI
+Controls LocalStack
+pip install localstack
+AWS CLI
+Talks to LocalStack
+aws.amazon.com/cli
+awslocal
+AWS CLI wrapper for LocalStack
+pip install awscli-local
+Git
+Version control
+git-scm.com
+VS Code
+Code editor
+code.visualstudio.com
+Postman (optional)
+API testing GUI
+postman.com
+1.2 Install Python
+Python is the programming language FastAPI is built on. You need version 3.11 or higher.
+Step 1  Download Python
+Go to python.org/downloads and download the latest Python 3.11 or 3.12 installer for your operating system.
+Step 2  Install Python — IMPORTANT setting for Windows
+Critical Windows Setting
+On the first screen of the installer you will see a checkbox at the bottom:
+  'Add Python to PATH'
+You MUST tick this checkbox before clicking Install Now.
+If you miss this, Python commands will not work in your terminal.
+Step 3  Verify Python is installed
+# Open a new terminal and run:
+python --version
+# Expected output:
+# Python 3.11.x  or  Python 3.12.x
+# Also verify pip is installed:
+pip --version
+# Expected: pip 23.x from C:\Python311\... (python 3.11)
+1.3 Install Docker Desktop
+Docker Desktop runs LocalStack. LocalStack lives inside a Docker container. Without Docker, LocalStack cannot run.
+Step 1  Download Docker Desktop
+Go to docker.com/products/docker-desktop and download Docker Desktop for your operating system (Windows, Mac, or Linux).
+Step 2  Install Docker Desktop
+Run the installer with all default settings. On Windows it may ask you to enable WSL 2 (Windows Subsystem for Linux) — click Yes and allow it to install.
+Step 3  Start Docker Desktop
+After installation, open Docker Desktop from your Start menu or Applications. Wait for it to fully start — you will see a green icon in your system tray when it is ready.
+Step 4  Verify Docker is running
+docker --version
+# Expected: Docker version 24.x.x
+docker run hello-world
+# Expected: Hello from Docker!
+# If this works, Docker is correctly installed.
+NOTE  Docker Desktop must be running in the background at all times while you work on this project. If your computer restarts, open Docker Desktop again before running any commands.
+1.4 Install AWS CLI
+The AWS CLI is a command-line tool that lets you interact with AWS services. We will use it to talk to LocalStack.
+# Windows — download and run the installer from:
+# https://awscli.amazonaws.com/AWSCLIV2.msi
+# Mac
+brew install awscli
+# Linux
+sudo apt install awscli
+# Verify installation
+aws --version
+# Expected: aws-cli/2.x.x Python/3.x.x
+1.5 Install LocalStack and awslocal
+Step 1  Install LocalStack CLI
+pip install localstack
+# Verify
+localstack --version
+Step 2  Install awslocal
+awslocal is a thin wrapper around the AWS CLI that automatically points all commands to your local LocalStack instead of real AWS. You use it exactly like the aws command but replace aws with awslocal.
+pip install awscli-local
+# Verify
+awslocal --version
+1.6 Configure AWS CLI for LocalStack
+Even though we are using LocalStack (not real AWS), the AWS CLI still needs some credentials configured. LocalStack accepts any fake values — they do not need to be real.
+aws configure
+# When prompted, enter these fake values:
+AWS Access Key ID:     test
+AWS Secret Access Key: test
+Default region name:  us-east-1
+Default output format: json
+TIP  These are not real AWS credentials. LocalStack accepts any values. We use 'test' as a convention.
+Chapter 2: Project Setup
+2.1 Create Project Folder
+# Create your project folder
+mkdir todo-app
+cd todo-app
+# Create a Python virtual environment
+# A virtual environment is an isolated Python installation just for this project
+python -m venv venv
+# Activate the virtual environment
+# Windows:
+venv\Scripts\activate
+# Mac/Linux:
+source venv/bin/activate
+# Your terminal prompt should now show (venv) at the start
+# Example: (venv) C:\Users\YourName\todo-app>
+NOTE  Always activate the virtual environment before running any pip install or python command. If you close and reopen your terminal, activate it again.
+2.2 Install Python Dependencies
+Create a file called requirements.txt in your project folder with the following content:
+# requirements.txt
+fastapi==0.111.0
+uvicorn==0.30.0
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+python-multipart==0.0.9
+boto3==1.34.0
+python-dotenv==1.0.1
+pydantic==2.7.0
+alembic==1.13.1
+Now install all dependencies:
+pip install -r requirements.txt
+# This downloads and installs all packages
+# It will take 1-2 minutes
+# You should see: Successfully installed fastapi-0.111.0 ...
+What each package does:
+fastapi         — The web framework for building the API
+uvicorn         — The server that runs FastAPI
+sqlalchemy      — Talks to the PostgreSQL database
+psycopg2-binary — PostgreSQL driver for Python
+python-multipart— Handles file uploads
+boto3           — AWS SDK for Python (talks to S3 and SES via LocalStack)
+python-dotenv   — Reads .env files for configuration
+pydantic        — Data validation for API inputs
+alembic         — Database migrations tool
+2.3 Project Folder Structure
+Create this folder and file structure. Every file and folder listed here is needed:
+todo-app/
++-- venv/                    # Virtual environment (auto-created)
++-- app/
+¦   +-- __init__.py          # Makes app a Python package (empty file)
+¦   +-- main.py              # FastAPI app entry point
+¦   +-- database.py          # Database connection setup
+¦   +-- models.py            # Database table definitions
+¦   +-- schemas.py           # API input/output shapes
+¦   +-- crud.py              # Database operations
+¦   +-- routers/
+¦   ¦   +-- __init__.py      # Empty file
+¦   ¦   +-- todos.py         # Todo API routes
+¦   +-- services/
+¦       +-- __init__.py      # Empty file
+¦       +-- s3_service.py    # S3 file upload logic
+¦       +-- ses_service.py   # SES email logic
++-- static/
+¦   +-- index.html           # Simple frontend
++-- .env                     # Environment variables (secrets)
++-- requirements.txt         # Python dependencies
++-- docker-compose.yml       # Runs PostgreSQL locally
+Create all the folders and empty files now:
+# Windows
+mkdir app app\routers app\services static
+type nul > app\__init__.py
+type nul > app\routers\__init__.py
+type nul > app\services\__init__.py
+# Mac/Linux
+mkdir -p app/routers app/services static
+touch app/__init__.py app/routers/__init__.py app/services/__init__.py
+2.4 Create the .env File
+The .env file stores all configuration values. Create this file in the project root:
+# .env
+# Database
+DATABASE_URL=postgresql://postgres:password@localhost:5432/tododb
+# LocalStack endpoint (where your local AWS lives)
+AWS_ENDPOINT_URL=http://localhost:4566
+# Fake AWS credentials for LocalStack
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+AWS_DEFAULT_REGION=us-east-1
+# S3 bucket name
+S3_BUCKET_NAME=todo-attachments
+# SES sender email (must be verified in LocalStack)
+SES_SENDER_EMAIL=noreply@todoapp.com
+# App settings
+APP_NAME=TODO App
+Chapter 3: PostgreSQL Database Setup
+3.1 Run PostgreSQL with Docker Compose
+Instead of installing PostgreSQL manually, we use Docker Compose to run it in a container. Create docker-compose.yml in your project root:
+# docker-compose.yml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: todo-postgres
+    environment:
+      POSTGRES_DB: tododb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+volumes:
+  postgres_data:
+Start the database:
+docker-compose up -d
+# The -d flag runs it in the background
+# Expected output:
+# Creating todo-postgres ... done
+# Verify it is running:
+docker ps
+# You should see todo-postgres in the list with status 'Up'
+3.2 Create Database Connection File
+Create app/database.py — this file handles connecting to PostgreSQL:
+# app/database.py
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
+import os
+load_dotenv()  # Read values from .env file
+DATABASE_URL = os.getenv('DATABASE_URL')
+# Create the database engine (the connection to PostgreSQL)
+engine = create_engine(DATABASE_URL)
+# SessionLocal is a factory for database sessions
+# Each request gets its own session
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Base class for all database models
+Base = declarative_base()
+# Dependency — gives each API route a database session
+# and automatically closes it when the request is done
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+3.3 Create the Database Models
+Create app/models.py — this defines what the todos table looks like in the database:
+# app/models.py
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy.sql import func
+from app.database import Base
+class Todo(Base):
+    __tablename__ = 'todos'  # Name of the table in PostgreSQL
+    id          = Column(Integer, primary_key=True, index=True)
+    title       = Column(String(200), nullable=False)   # Cannot be empty
+    description = Column(Text, nullable=True)            # Optional
+    completed   = Column(Boolean, default=False)         # False by default
+    priority    = Column(String(20), default='medium')   # low/medium/high
+    attachment  = Column(String(500), nullable=True)     # S3 file URL
+    email       = Column(String(200), nullable=True)     # For SES notification
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at  = Column(DateTime(timezone=True), onupdate=func.now())
+3.4 Create Pydantic Schemas
+Create app/schemas.py — this defines what data the API accepts and returns. Pydantic validates all inputs automatically:
+# app/schemas.py
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import datetime
+# What we accept when CREATING a todo
+class TodoCreate(BaseModel):
+    title:       str
+    description: Optional[str] = None
+    priority:    Optional[str] = 'medium'
+    email:       Optional[str] = None  # Email to notify
+# What we accept when UPDATING a todo
+class TodoUpdate(BaseModel):
+    title:       Optional[str] = None
+    description: Optional[str] = None
+    completed:   Optional[bool] = None
+    priority:    Optional[str] = None
+# What we RETURN in API responses
+class TodoResponse(BaseModel):
+    id:          int
+    title:       str
+    description: Optional[str]
+    completed:   bool
+    priority:    str
+    attachment:  Optional[str]
+    email:       Optional[str]
+    created_at:  datetime
+    class Config:
+        from_attributes = True  # Allows reading from SQLAlchemy objects
+3.5 Create CRUD Operations
+Create app/crud.py — this file contains all the database read/write logic:
+# app/crud.py
+from sqlalchemy.orm import Session
+from app import models, schemas
+def get_todos(db: Session, skip: int = 0, limit: int = 100):
+    """Get all todos from the database"""
+    return db.query(models.Todo).offset(skip).limit(limit).all()
+def get_todo(db: Session, todo_id: int):
+    """Get a single todo by ID"""
+    return db.query(models.Todo).filter(models.Todo.id == todo_id).first()
+def create_todo(db: Session, todo: schemas.TodoCreate):
+    """Create a new todo in the database"""
+    db_todo = models.Todo(**todo.model_dump())
+    db.add(db_todo)
+    db.commit()       # Save to database
+    db.refresh(db_todo)  # Get the saved object with ID
+    return db_todo
+def update_todo(db: Session, todo_id: int, todo: schemas.TodoUpdate):
+    """Update an existing todo"""
+    db_todo = get_todo(db, todo_id)
+    if not db_todo:
+        return None
+    # Only update fields that were provided
+    update_data = todo.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_todo, field, value)
+    db.commit()
+    db.refresh(db_todo)
+    return db_todo
+def delete_todo(db: Session, todo_id: int):
+    """Delete a todo"""
+    db_todo = get_todo(db, todo_id)
+    if not db_todo:
+        return None
+    db.delete(db_todo)
+    db.commit()
+    return db_todo
+def update_todo_attachment(db: Session, todo_id: int, attachment_url: str):
+    """Save the S3 attachment URL to a todo"""
+    db_todo = get_todo(db, todo_id)
+    if db_todo:
+        db_todo.attachment = attachment_url
+        db.commit()
+        db.refresh(db_todo)
+    return db_todo
+Chapter 4: AWS Services with LocalStack
+4.1 Start LocalStack
+LocalStack runs inside Docker and simulates all AWS services. Open a new terminal window (keep it open) and run:
+# Start LocalStack
+localstack start
+# You will see a lot of output as services start up.
+# Wait until you see:
+# Ready.
+# Keep this terminal window open!
+# LocalStack must keep running while you develop.
+TIP  If localstack start fails, make sure Docker Desktop is running. LocalStack requires Docker.
+Verify LocalStack is running — open another terminal and run:
+# Check LocalStack health
+curl http://localhost:4566/_localstack/health
+# Expected: JSON showing services like s3, ses are 'available'
+# {"services": {"s3": "available", "ses": "available", ...}}
+4.2 Create S3 Service
+Create app/services/s3_service.py — this handles all file uploads to S3:
+# app/services/s3_service.py
+import boto3
+import os
+from dotenv import load_dotenv
+from fastapi import UploadFile
+import uuid
+load_dotenv()
+# Create S3 client pointing to LocalStack instead of real AWS
+s3_client = boto3.client(
+    's3',
+    endpoint_url=os.getenv('AWS_ENDPOINT_URL'),  # http://localhost:4566
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_DEFAULT_REGION')
+)
+BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+def create_bucket_if_not_exists():
+    """Create S3 bucket if it does not already exist"""
+    try:
+        s3_client.head_bucket(Bucket=BUCKET_NAME)
+        print(f'Bucket {BUCKET_NAME} already exists')
+    except Exception:
+        s3_client.create_bucket(Bucket=BUCKET_NAME)
+        print(f'Created bucket: {BUCKET_NAME}')
+def upload_file(file: UploadFile) -> str:
+    """
+    Upload a file to S3 and return its URL.
+    The URL is what we store in the database.
+    """
+    # Generate a unique filename to avoid conflicts
+    file_extension = file.filename.split('.')[-1]
+    unique_filename = f'{uuid.uuid4()}.{file_extension}'
+    # Upload the file to S3
+    s3_client.upload_fileobj(
+        file.file,
+        BUCKET_NAME,
+        unique_filename,
+        ExtraArgs={'ContentType': file.content_type}
+    )
+    # Build the URL where the file can be accessed
+    url = f'{os.getenv("AWS_ENDPOINT_URL")}/{BUCKET_NAME}/{unique_filename}'
+    return url
+def delete_file(file_url: str):
+    """Delete a file from S3 using its URL"""
+    # Extract the filename from the URL
+    filename = file_url.split('/')[-1]
+    s3_client.delete_object(Bucket=BUCKET_NAME, Key=filename)
+4.3 Create SES Service
+Create app/services/ses_service.py — this handles sending emails via SES:
+# app/services/ses_service.py
+import boto3
+import os
+from dotenv import load_dotenv
+load_dotenv()
+# Create SES client pointing to LocalStack
+ses_client = boto3.client(
+    'ses',
+    endpoint_url=os.getenv('AWS_ENDPOINT_URL'),
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_DEFAULT_REGION')
+)
+SENDER = os.getenv('SES_SENDER_EMAIL')
+def verify_email(email: str):
+    """
+    In real AWS SES you must verify emails before sending.
+    LocalStack accepts any email but we still call this
+    to mirror real AWS behavior.
+    """
+    ses_client.verify_email_identity(EmailAddress=email)
+def send_todo_created_email(recipient_email: str, todo_title: str, todo_id: int):
+    """
+    Send an email notification when a new todo is created.
+    In LocalStack this will not actually send a real email
+    but the API call will succeed exactly like real AWS.
+    """
+    try:
+        # First verify sender email (LocalStack requirement)
+        verify_email(SENDER)
+        verify_email(recipient_email)
+        response = ses_client.send_email(
+            Source=SENDER,
+            Destination={
+                'ToAddresses': [recipient_email]
+            },
+            Message={
+                'Subject': {
+                    'Data': f'New TODO Created: {todo_title}',
+                    'Charset': 'UTF-8'
+                },
+                'Body': {
+                    'Html': {
+                        'Data': f'''
+                            <h2>Your TODO has been created!</h2>
+                            <p><b>Title:</b> {todo_title}</p>
+                            <p><b>ID:</b> {todo_id}</p>
+                            <p>Log in to your TODO app to manage this task.</p>
+                        ''',
+                        'Charset': 'UTF-8'
+                    }
+                }
+            }
+        )
+        print(f'Email sent! Message ID: {response["MessageId"]}')
+        return True
+    except Exception as e:
+        print(f'Email sending failed: {e}')
+        return False
+Chapter 5: FastAPI Routes
+5.1 Create the Todo Router
+Create app/routers/todos.py — this is where all the API endpoints are defined:
+# app/routers/todos.py
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from sqlalchemy.orm import Session
+from typing import List, Optional
+from app import crud, schemas
+from app.database import get_db
+from app.services import s3_service, ses_service
+router = APIRouter(prefix='/todos', tags=['todos'])
+# -- GET all todos -----------------------------------
+@router.get('/', response_model=List[schemas.TodoResponse])
+def get_todos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Get all todos. Supports pagination with skip and limit."""
+    todos = crud.get_todos(db, skip=skip, limit=limit)
+    return todos
+# -- GET single todo ---------------------------------
+@router.get('/{todo_id}', response_model=schemas.TodoResponse)
+def get_todo(todo_id: int, db: Session = Depends(get_db)):
+    """Get a single todo by its ID."""
+    todo = crud.get_todo(db, todo_id)
+    if not todo:
+        raise HTTPException(status_code=404, detail='Todo not found')
+    return todo
+# -- CREATE todo -------------------------------------
+@router.post('/', response_model=schemas.TodoResponse, status_code=201)
+def create_todo(todo: schemas.TodoCreate, db: Session = Depends(get_db)):
+    """
+    Create a new todo.
+    If an email is provided, sends a notification via SES.
+    """
+    db_todo = crud.create_todo(db, todo)
+    # Send email notification if email was provided
+    if todo.email:
+        ses_service.send_todo_created_email(
+            recipient_email=todo.email,
+            todo_title=todo.title,
+            todo_id=db_todo.id
+        )
+    return db_todo
+# -- UPDATE todo -------------------------------------
+@router.patch('/{todo_id}', response_model=schemas.TodoResponse)
+def update_todo(todo_id: int, todo: schemas.TodoUpdate, db: Session = Depends(get_db)):
+    """Update a todo. Only provided fields are updated."""
+    db_todo = crud.update_todo(db, todo_id, todo)
+    if not db_todo:
+        raise HTTPException(status_code=404, detail='Todo not found')
+    return db_todo
+# -- DELETE todo -------------------------------------
+@router.delete('/{todo_id}')
+def delete_todo(todo_id: int, db: Session = Depends(get_db)):
+    """Delete a todo by ID."""
+    db_todo = crud.delete_todo(db, todo_id)
+    if not db_todo:
+        raise HTTPException(status_code=404, detail='Todo not found')
+    return {'message': f'Todo {todo_id} deleted successfully'}
+# -- UPLOAD attachment --------------------------------
+@router.post('/{todo_id}/attachment', response_model=schemas.TodoResponse)
+async def upload_attachment(
+    todo_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a file attachment to a todo.
+    The file is stored in S3 and the URL is saved in the database.
+    """
+    # Check todo exists
+    db_todo = crud.get_todo(db, todo_id)
+    if not db_todo:
+        raise HTTPException(status_code=404, detail='Todo not found')
+    # Upload file to S3
+    file_url = s3_service.upload_file(file)
+    # Save the S3 URL in the database
+    db_todo = crud.update_todo_attachment(db, todo_id, file_url)
+    return db_todo
+5.2 Create the Main Application File
+Create app/main.py — this is the entry point that ties everything together:
+# app/main.py
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from app.database import engine
+from app import models
+from app.routers import todos
+from app.services import s3_service
+# Create all database tables automatically
+# This reads models.py and creates the 'todos' table in PostgreSQL
+models.Base.metadata.create_all(bind=engine)
+# Create the FastAPI application
+app = FastAPI(
+    title='TODO App',
+    description='A TODO app using FastAPI, S3, and SES via LocalStack',
+    version='1.0.0'
+)
+# Allow the frontend (running on port 5500) to call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],  # In production, specify exact origins
+    allow_credentials=True,
+    allow_methods=['*'],
+    allow_headers=['*'],
+)
+# Serve the static HTML frontend at /static
+app.mount('/static', StaticFiles(directory='static'), name='static')
+# Register all TODO routes
+app.include_router(todos.router)
+# Create the S3 bucket when the app starts
+@app.on_event('startup')
+async def startup_event():
+    s3_service.create_bucket_if_not_exists()
+    print('Application started successfully!')
+# Root endpoint
+@app.get('/')
+def root():
+    return {
+        'message': 'TODO App API is running!',
+        'docs': '/docs',
+        'frontend': '/static/index.html'
+    }
+Chapter 6: Simple HTML Frontend
+Create static/index.html — a simple frontend to interact with your API without needing Postman:
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='UTF-8'>
+  <title>TODO App</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px;
+           margin: 40px auto; padding: 0 20px; background: #f5f5f5; }
+    h1   { color: #1B3A6B; }
+    input, textarea, select {
+      width: 100%; padding: 8px; margin: 5px 0 10px;
+      border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button {
+      background: #2563EB; color: white; border: none;
+      padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #1B3A6B; }
+    .todo-item {
+      background: white; padding: 15px; margin: 10px 0;
+      border-radius: 6px; border-left: 4px solid #2563EB; }
+    .completed { border-left-color: #16A34A; opacity: 0.7; }
+    .priority-high { border-left-color: #DC2626; }
+    .priority-low  { border-left-color: #9CA3AF; }
+  </style>
+</head>
+<body>
+  <h1>TODO App with AWS</h1>
+  <div style='background:white;padding:20px;border-radius:8px;margin-bottom:20px'>
+    <h2>Create New TODO</h2>
+    <input id='title' placeholder='Title (required)' />
+    <textarea id='description' placeholder='Description (optional)' rows='3'></textarea>
+    <select id='priority'>
+      <option value='low'>Low Priority</option>
+      <option value='medium' selected>Medium Priority</option>
+      <option value='high'>High Priority</option>
+    </select>
+    <input id='email' placeholder='Email for notification (optional)' type='email' />
+    <button onclick='createTodo()'>Create TODO</button>
+  </div>
+  <h2>All TODOs</h2>
+  <button onclick='loadTodos()' style='margin-bottom:10px'>Refresh List</button>
+  <div id='todos-list'></div>
+  <script>
+    const API = 'http://localhost:8000';
+    async function loadTodos() {
+      const res  = await fetch(`${API}/todos/`);
+      const todos = await res.json();
+      const div  = document.getElementById('todos-list');
+      if (todos.length === 0) {
+        div.innerHTML = '<p>No todos yet. Create one above!</p>';
+        return;
+      }
+      div.innerHTML = todos.map(t => `
+        <div class='todo-item ${t.completed ? 'completed' : ''} priority-${t.priority}'>
+          <strong>${t.id}. ${t.title}</strong>
+          <span style='float:right;font-size:12px'>${t.priority.toUpperCase()}</span>
+          <p>${t.description || 'No description'}</p>
+          ${t.attachment ? `<a href='${t.attachment}' target='_blank'>View Attachment</a>` : ''}
+          <br>
+          <button onclick='toggleComplete(${t.id}, ${t.completed})'>
+            ${t.completed ? 'Mark Incomplete' : 'Mark Complete'}
+          </button>
+          <button onclick='deleteTodo(${t.id})'
+            style='background:#DC2626;margin-left:8px'>Delete</button>
+          <label style='margin-left:8px'>
+            Upload file:
+            <input type='file' onchange='uploadFile(${t.id}, this)' />
+          </label>
+        </div>
+      `).join('');
+    }
+    async function createTodo() {
+      const title = document.getElementById('title').value;
+      if (!title) { alert('Title is required!'); return; }
+      await fetch(`${API}/todos/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description: document.getElementById('description').value,
+          priority:    document.getElementById('priority').value,
+          email:       document.getElementById('email').value || null
+        })
+      });
+      document.getElementById('title').value = '';
+      document.getElementById('description').value = '';
+      document.getElementById('email').value = '';
+      loadTodos();
+    }
+    async function toggleComplete(id, currentStatus) {
+      await fetch(`${API}/todos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !currentStatus })
+      });
+      loadTodos();
+    }
+    async function deleteTodo(id) {
+      if (!confirm('Delete this todo?')) return;
+      await fetch(`${API}/todos/${id}`, { method: 'DELETE' });
+      loadTodos();
+    }
+    async function uploadFile(todoId, input) {
+      const file = input.files[0];
+      if (!file) return;
+      const form = new FormData();
+      form.append('file', file);
+      await fetch(`${API}/todos/${todoId}/attachment`, {
+        method: 'POST', body: form
+      });
+      loadTodos();
+    }
+    // Load todos when page opens
+    loadTodos();
+  </script>
+</body>
+</html>
+Chapter 7: Running the Application
+7.1 Start Everything in Order
+Start these in order — each in its own terminal window:
+Terminal 1:  localstack start          (keep running)
+Terminal 2:  docker-compose up -d      (run once, stays running)
+Terminal 3:  uvicorn app.main:app --reload --port 8000   (your app)
+7.2 Start LocalStack (Terminal 1)
+localstack start
+# Wait until you see: Ready.
+7.3 Start PostgreSQL (Terminal 2)
+docker-compose up -d
+# Expected: todo-postgres is up and running
+7.4 Start FastAPI (Terminal 3)
+# Make sure your virtual environment is active
+# Windows:
+venv\Scripts\activate
+# Mac/Linux:
+source venv/bin/activate
+# Start the server
+uvicorn app.main:app --reload --port 8000
+# Expected output:
+# INFO:     Started server process
+# INFO:     Waiting for application startup.
+# Created bucket: todo-attachments
+# Application started successfully!
+# INFO:     Application startup complete.
+# INFO:     Uvicorn running on http://127.0.0.1:8000
+7.5 Test the Application
+Open your browser and visit these URLs:
+URL
+What You See
+http://localhost:8000
+API root — confirms app is running
+http://localhost:8000/docs
+Interactive API docs — test all endpoints here
+http://localhost:8000/static/index.html
+Your HTML frontend
+7.6 Set Up LocalStack S3 Bucket
+Verify the S3 bucket was created automatically:
+# List S3 buckets in LocalStack
+awslocal s3 ls
+# Expected:
+# 2024-01-01 00:00:00 todo-attachments
+7.7 Test SES Email Setup
+Verify LocalStack SES can send emails:
+# Verify your sender email in LocalStack SES
+awslocal ses verify-email-identity --email-address noreply@todoapp.com
+# List verified emails
+awslocal ses list-verified-email-addresses
+# Expected:
+# { 'VerifiedEmailAddresses': ['noreply@todoapp.com'] }
+Chapter 8: Testing All Features
+8.1 Test via Interactive API Docs
+Go to http://localhost:8000/docs — FastAPI automatically generates this interactive documentation. You can test every endpoint directly in the browser without writing any code.
+Click on POST /todos/ to expand it
+Click Try it out
+Fill in the request body with title, description, priority, and optionally an email
+Click Execute
+You should see a 201 response with the created todo
+8.2 Test via curl Commands
+Test every endpoint from your terminal:
+Create a todo
+curl -X POST http://localhost:8000/todos/ \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "Learn FastAPI",
+    "description": "Build a TODO app with AWS services",
+    "priority": "high",
+    "email": "test@example.com"
+  }'
+# Expected response:
+# { "id": 1, "title": "Learn FastAPI", "completed": false, ... }
+Get all todos
+curl http://localhost:8000/todos/
+# Expected: JSON array of all todos
+Mark a todo complete
+curl -X PATCH http://localhost:8000/todos/1 \
+  -H 'Content-Type: application/json' \
+  -d '{"completed": true}'
+Upload a file attachment
+# Create a test file first
+echo 'Test attachment content' > test.txt
+# Upload it to todo ID 1
+curl -X POST http://localhost:8000/todos/1/attachment \
+  -F 'file=@test.txt'
+# The response will include the S3 URL for the file
+Verify file was uploaded to LocalStack S3
+awslocal s3 ls s3://todo-attachments/
+# Expected: your uploaded file listed here
+Check SES emails sent
+# LocalStack captures emails instead of actually sending them
+# Check what emails were 'sent'
+awslocal ses get-send-statistics
+Delete a todo
+curl -X DELETE http://localhost:8000/todos/1
+# Expected: { "message": "Todo 1 deleted successfully" }
+Chapter 9: Deploy to Real AWS EC2
+Once everything works locally with LocalStack, you can deploy to real AWS. Here are the steps to get it running on a real EC2 instance.
+9.1 Launch EC2 Instance
+Go to AWS Console ? EC2 ? Launch Instance
+Name: todo-app-server
+AMI: Ubuntu Server 22.04 LTS (Free tier eligible)
+Instance type: t3.micro (Free tier eligible)
+Create a new key pair ? name it todo-key ? download the .pem file
+Security group: Allow SSH (port 22) and HTTP (port 8000) from Anywhere
+Click Launch Instance
+9.2 Connect to EC2
+# Change key file permissions (Mac/Linux only)
+chmod 400 todo-key.pem
+# Connect via SSH (replace with your EC2 public IP)
+ssh -i todo-key.pem ubuntu@YOUR_EC2_PUBLIC_IP
+9.3 Install Dependencies on EC2
+# Update system packages
+sudo apt update && sudo apt upgrade -y
+# Install Python and pip
+sudo apt install python3 python3-pip python3-venv git -y
+# Install PostgreSQL client
+sudo apt install postgresql-client -y
+9.4 Deploy the Application
+# Clone your project (or use scp to copy files)
+git clone https://github.com/YOUR_USERNAME/todo-app.git
+cd todo-app
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+# Install dependencies
+pip install -r requirements.txt
+# Create .env file with REAL AWS credentials this time
+# (Remove the AWS_ENDPOINT_URL line — use real AWS)
+nano .env
+9.5 Update .env for Real AWS
+# .env on EC2 — uses REAL AWS services (no LocalStack)
+DATABASE_URL=postgresql://postgres:password@YOUR_RDS_ENDPOINT:5432/tododb
+# Remove or comment out AWS_ENDPOINT_URL
+# AWS_ENDPOINT_URL=http://localhost:4566  <-- REMOVE THIS LINE
+AWS_ACCESS_KEY_ID=YOUR_REAL_ACCESS_KEY
+AWS_SECRET_ACCESS_KEY=YOUR_REAL_SECRET_KEY
+AWS_DEFAULT_REGION=us-east-1
+S3_BUCKET_NAME=your-real-bucket-name
+SES_SENDER_EMAIL=your-verified@email.com
+9.6 Run the App on EC2
+# Start the app (runs on port 8000)
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+# To keep it running after you disconnect, use nohup:
+nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+# Access your app at:
+# http://YOUR_EC2_PUBLIC_IP:8000
+# http://YOUR_EC2_PUBLIC_IP:8000/docs
+# http://YOUR_EC2_PUBLIC_IP:8000/static/index.html
+Chapter 10: Troubleshooting Common Issues
+Problem
+Cause
+Fix
+LocalStack not starting
+Docker Desktop is not running
+Open Docker Desktop and wait for green icon
+Connection refused on port 4566
+LocalStack is not started
+Run localstack start in a terminal
+ModuleNotFoundError
+Virtual env not activated or pip install not run
+Run venv activation command then pip install -r requirements.txt
+Database connection error
+PostgreSQL container not running
+Run docker-compose up -d
+S3 bucket not found
+Bucket not created yet
+App creates it on startup — check terminal for errors
+CORS error in browser
+Frontend and API on different ports
+CORS middleware is configured — check allow_origins in main.py
+uvicorn not found
+Virtual environment not activated
+Activate venv first then run uvicorn
+Port 8000 already in use
+Another process using the port
+Use --port 8001 or kill the other process
+You have completed the TODO App with FastAPI and AWS LocalStack!
+Local development done. Deploy to EC2 when ready.
